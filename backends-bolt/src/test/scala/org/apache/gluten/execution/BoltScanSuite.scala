@@ -261,6 +261,65 @@ class BoltScanSuite extends BoltWholeStageTransformerSuite {
     }
   }
 
+  test("partition column with same name as data column reads partition value") {
+    // When a Hive-style partition directory ('a=1/') reuses a name that
+    // also appears as a data column inside the parquet file, Spark's
+    // semantics require the partition value to win and the file's
+    // same-named column to be silently dropped. The parquet read goes
+    // through SubstraitToBoltPlan, whose fallback `tableSchema` (used
+    // when LocalFiles.schema is absent, i.e. parquetUseColumnNames=true)
+    // must NOT contain partition-marked columns. Otherwise the bolt
+    // parquet reader's strict convertType compares the planner's
+    // inferred partition type (INT here) against the file's actual data
+    // type (BIGINT) and throws Schema mismatch.
+    //
+    // Mirrors Spark SPARK-18108 and depends on bolt seeing a substrait
+    // ReadRel with one NORMAL_COL ('b') and one PARTITION_COL ('a').
+    withTempDir {
+      dir =>
+        val path = dir.getCanonicalPath
+        spark
+          .createDataFrame(Seq((1L, 2.0)))
+          .toDF("a", "b")
+          .write
+          .parquet(s"$path/a=1")
+
+        val df = spark.read.parquet(path)
+        // Partition value (string "1" parsed as INT) wins over data file's BIGINT.
+        checkAnswer(df, Seq(Row(1, 2.0)))
+        // Sanity: confirm we actually exercised the Bolt scan path; if
+        // the plan fell back to vanilla Spark the test would still pass
+        // against Spark's reader and lose its regression value.
+        assert(
+          df.queryExecution.executedPlan
+            .collect { case scan: FileSourceScanExecTransformer => scan }
+            .nonEmpty,
+          s"Expected FileSourceScanExecTransformer in plan:\n" +
+            s"${df.queryExecution.executedPlan}")
+    }
+  }
+
+  test("basePath option keeps same-named data column readable (no partition inference)") {
+    // Companion to the SPARK-18108 case above. When basePath equals the
+    // read path, Spark does not interpret the trailing 'a=1' as a
+    // partition segment. All columns reach substrait as NORMAL_COL, the
+    // fix's PARTITION_COL filter is a no-op, and the file's a:BIGINT
+    // is read directly. Locks in that opting out of partition discovery
+    // continues to surface the data column unchanged.
+    withTempDir {
+      dir =>
+        val path = dir.getCanonicalPath
+        spark
+          .createDataFrame(Seq((42L, 2.0)))
+          .toDF("a", "b")
+          .write
+          .parquet(s"$path/a=1")
+
+        val df = spark.read.option("basePath", s"$path/a=1").parquet(s"$path/a=1")
+        checkAnswer(df, Seq(Row(42L, 2.0)))
+    }
+  }
+
   test("ORC index based schema evolution") {
     withSQLConf(
       BoltConfig.ORC_USE_COLUMN_NAMES.key -> "false",
