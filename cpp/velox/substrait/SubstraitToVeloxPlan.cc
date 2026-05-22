@@ -1339,27 +1339,7 @@ core::PlanNodePtr SubstraitToVeloxPlanConverter::toVeloxPlan(const ::substrait::
   // The columns we project from the file.
   auto baseSchema = ROW(std::move(names), std::move(types));
   // The columns present in the table, if not available default to the baseSchema.
-  // When falling back, strip PARTITION_COL entries: partition values are
-  // injected as scan-spec constants from HiveSplit::partitionKeys and are
-  // never read from the file, so they must not appear in the schema we
-  // hand to the reader. Including them turns the partition column's
-  // substrait-output type into the parquet reader's requestedType, which
-  // collides with the file's actual type when a partition name reuses a
-  // data-column name (SPARK-18108) and trips ReaderBase::convertType.
-  auto tableSchema = splitInfo->tableSchema;
-  if (!tableSchema) {
-    std::vector<std::string> tableNames;
-    std::vector<TypePtr> tableTypes;
-    tableNames.reserve(colNameList.size());
-    tableTypes.reserve(colNameList.size());
-    for (size_t i = 0; i < colNameList.size(); ++i) {
-      if (columnTypes[i] != ColumnType::kPartitionKey) {
-        tableNames.push_back(colNameList[i]);
-        tableTypes.push_back(veloxTypeList[i]);
-      }
-    }
-    tableSchema = ROW(std::move(tableNames), std::move(tableTypes));
-  }
+  auto tableSchema = splitInfo->tableSchema ? splitInfo->tableSchema : baseSchema;
 
   connector::ConnectorTableHandlePtr tableHandle;
   auto remainingFilter = readRel.has_filter() ? exprConverter_->toVeloxExpr(readRel.filter(), baseSchema) : nullptr;

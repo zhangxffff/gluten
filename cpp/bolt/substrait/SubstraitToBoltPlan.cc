@@ -1362,14 +1362,10 @@ core::PlanNodePtr SubstraitToBoltPlanConverter::toBoltPlan(const ::substrait::Re
 
   // The columns we project from the file.
   auto baseSchema = ROW(std::move(names), std::move(types));
-  // The columns present in the table, if not available default to the baseSchema.
-  // When falling back, strip PARTITION_COL entries: partition values are
-  // injected as scan-spec constants from HiveSplit::partitionKeys and are
-  // never read from the file, so they must not appear in the schema we
-  // hand to the reader. Including them turns the partition column's
-  // substrait-output type into the parquet reader's requestedType, which
-  // collides with the file's actual type when a partition name reuses a
-  // data-column name (SPARK-18108) and trips ReaderBase::convertType.
+  // The columns present in the table. Fallback strips PARTITION_COL entries:
+  // partition values come from HiveSplit::partitionKeys, not the file, and
+  // including them collides with the file's real type on name reuse
+  // (SPARK-18108).
   auto tableSchema = splitInfo->tableSchema;
   if (!tableSchema) {
     std::vector<std::string> tableNames;
