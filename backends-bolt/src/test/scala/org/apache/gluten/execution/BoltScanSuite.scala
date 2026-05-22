@@ -291,11 +291,12 @@ class BoltScanSuite extends BoltWholeStageTransformerSuite {
         // the plan fell back to vanilla Spark the test would still pass
         // against Spark's reader and lose its regression value.
         assert(
-          df.queryExecution.executedPlan
-            .collect { case scan: FileSourceScanExecTransformer => scan }
-            .nonEmpty,
+          df.queryExecution.executedPlan.collect {
+            case scan: FileSourceScanExecTransformer => scan
+          }.nonEmpty,
           s"Expected FileSourceScanExecTransformer in plan:\n" +
-            s"${df.queryExecution.executedPlan}")
+            s"${df.queryExecution.executedPlan}"
+        )
     }
   }
 
