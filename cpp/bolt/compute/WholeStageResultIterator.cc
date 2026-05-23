@@ -597,6 +597,12 @@ void WholeStageResultIterator::collectMetrics() {
     return;
   }
 
+  if (!task_) {
+    // Task has not been initialized (next() was never called), nothing to collect.
+    LOG(INFO) << "Skip collect task metrics since task was not initialized.";
+    return;
+  }
+
   const auto& taskStats = task_->taskStats();
   if (taskStats.executionStartTimeMs == 0) {
     LOG(INFO) << "Skip collect task metrics since task did not call next().";
