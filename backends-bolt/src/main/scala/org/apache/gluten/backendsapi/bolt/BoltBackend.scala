@@ -25,7 +25,6 @@ import org.apache.gluten.execution.WriteFilesExecTransformer
 import org.apache.gluten.expression.WindowFunctionsBuilder
 import org.apache.gluten.extension.columnar.cost.{LegacyCoster, LongCoster, RoughCoster}
 import org.apache.gluten.extension.columnar.transition.{Convention, ConventionFunc}
-import org.apache.gluten.sql.shims.SparkShimLoader
 import org.apache.gluten.substrait.rel.LocalFilesNode
 import org.apache.gluten.substrait.rel.LocalFilesNode.ReadFileFormat
 import org.apache.gluten.substrait.rel.LocalFilesNode.ReadFileFormat.{DwrfReadFormat, OrcReadFormat, ParquetReadFormat}
@@ -550,9 +549,7 @@ object BoltBackendSettings extends BackendSettingsApi {
   override def staticPartitionWriteOnly(): Boolean = true
 
   override def enableNativeWriteFiles(): Boolean = {
-    GlutenConfig.get.enableNativeWriter.getOrElse(
-      SparkShimLoader.getSparkShims.enableNativeWriteFilesByDefault()
-    )
+    GlutenConfig.get.enableNativeWriter.getOrElse(true)
   }
 
   override def shouldRewriteCount(): Boolean = {
