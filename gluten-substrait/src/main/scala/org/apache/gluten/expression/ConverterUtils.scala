@@ -214,6 +214,21 @@ object ConverterUtils extends Logging {
   }
 
   def getTypeNode(datatype: DataType, nullable: Boolean): TypeNode = {
+    getTypeNode(
+      datatype,
+      nullable,
+      BackendsApiManager.getSettings.structFieldToLowerCase())
+  }
+
+  /**
+   * Same as [[getTypeNode(DataType, Boolean)]], but lets the caller decide whether struct field
+   * names are normalized by [[normalizeColName]]. Pass `false` when the native function needs the
+   * original field names, e.g. from_json matches JSON keys against them case-sensitively.
+   */
+  def getTypeNode(
+      datatype: DataType,
+      nullable: Boolean,
+      lowerCaseStructFieldNames: Boolean): TypeNode = {
     datatype match {
       case BooleanType =>
         TypeBuilder.makeBoolean(nullable)
@@ -249,17 +264,22 @@ object ConverterUtils extends Logging {
       case m: MapType =>
         TypeBuilder.makeMap(
           nullable,
-          getTypeNode(m.keyType, nullable = false),
-          getTypeNode(m.valueType, m.valueContainsNull))
+          getTypeNode(m.keyType, nullable = false, lowerCaseStructFieldNames),
+          getTypeNode(m.valueType, m.valueContainsNull, lowerCaseStructFieldNames))
       case a: ArrayType =>
-        TypeBuilder.makeList(nullable, getTypeNode(a.elementType, a.containsNull))
+        TypeBuilder.makeList(
+          nullable,
+          getTypeNode(a.elementType, a.containsNull, lowerCaseStructFieldNames))
       case s: StructType =>
         val normalizeStructFieldName: String => String =
-          if (BackendsApiManager.getSettings.structFieldToLowerCase()) {
+          if (lowerCaseStructFieldNames) {
             (name: String) => normalizeColName(name)
           } else { (name: String) => name }
         val (fieldNodes, fieldNames) = s.map {
-          f => (getTypeNode(f.dataType, f.nullable), normalizeStructFieldName(f.name))
+          f =>
+            (
+              getTypeNode(f.dataType, f.nullable, lowerCaseStructFieldNames),
+              normalizeStructFieldName(f.name))
         }.unzip
         TypeBuilder.makeStruct(nullable, fieldNodes.asJava, fieldNames.asJava)
       case _: NullType =>

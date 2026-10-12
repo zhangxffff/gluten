@@ -16,6 +16,7 @@
  */
 package org.apache.gluten.expression
 
+import org.apache.gluten.backendsapi.BackendsApiManager
 import org.apache.gluten.expression.ConverterUtils.FunctionConfig
 import org.apache.gluten.expression.ExpressionConverter.replaceWithExpressionTransformer
 import org.apache.gluten.substrait.`type`.StructNode
@@ -23,12 +24,58 @@ import org.apache.gluten.substrait.SubstraitContext
 import org.apache.gluten.substrait.expression._
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.types.{IntegerType, LongType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, LongType, MapType, StructType, TimestampType}
 
 import java.lang.{Integer => JInteger}
 import java.util.{ArrayList => JArrayList}
 
+import scala.collection.JavaConverters._
 import scala.language.existentials
+
+/**
+ * Spark matches JSON keys against the from_json schema case-sensitively, regardless of
+ * spark.sql.caseSensitive. Call from_json with the schema's original field names so Bolt matches
+ * the same keys as Spark, then cast the result to the normalized type that the rest of the plan
+ * uses. The struct cast is positional, so it only renames fields.
+ */
+case class BoltFromJsonTransformer(
+    substraitExprName: String,
+    children: Seq[ExpressionTransformer],
+    original: JsonToStructs)
+  extends ExpressionTransformer {
+
+  override def doTransform(context: SubstraitContext): ExpressionNode = {
+    val funcName =
+      ConverterUtils.makeFuncName(substraitExprName, original.children.map(_.dataType))
+    val functionId = context.registerFunction(funcName)
+    val childNodes = children.map(_.doTransform(context)).asJava
+    val fromJsonNode = ExpressionBuilder.makeScalarFunction(
+      functionId,
+      childNodes,
+      ConverterUtils.getTypeNode(dataType, nullable, lowerCaseStructFieldNames = false))
+    if (normalizesFieldNames(dataType)) {
+      ExpressionBuilder.makeCast(
+        ConverterUtils.getTypeNode(dataType, nullable),
+        fromJsonNode,
+        false)
+    } else {
+      fromJsonNode
+    }
+  }
+
+  private def normalizesFieldNames(dt: DataType): Boolean = dt match {
+    case s: StructType =>
+      s.fields.exists {
+        f =>
+          (BackendsApiManager.getSettings.structFieldToLowerCase() &&
+            ConverterUtils.normalizeColName(f.name) != f.name) ||
+          normalizesFieldNames(f.dataType)
+      }
+    case a: ArrayType => normalizesFieldNames(a.elementType)
+    case m: MapType => normalizesFieldNames(m.keyType) || normalizesFieldNames(m.valueType)
+    case _ => false
+  }
+}
 
 case class BoltAliasTransformer(
     substraitExprName: String,

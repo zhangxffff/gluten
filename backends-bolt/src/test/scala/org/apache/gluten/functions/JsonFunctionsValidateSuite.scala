@@ -301,6 +301,34 @@ class JsonFunctionsValidateSuite extends FunctionsValidateSuite {
     }
   }
 
+  test("from_json function row matches field names case-sensitively") {
+    withTempPath {
+      path =>
+        Seq[String](
+          """{"Id":"10", "Value":"11"}""",
+          """{"id":"12", "Value":"13"}""",
+          """{"Nested":{"Key":"1"}, "nested":{"key":"2"}}"""
+        )
+          .toDF("txt")
+          .write
+          .parquet(path.getCanonicalPath)
+
+        spark.read.parquet(path.getCanonicalPath).createOrReplaceTempView("tbl")
+
+        runQueryAndCompare("select from_json(txt, 'id STRING, value STRING') from tbl") {
+          checkGlutenPlan[ProjectExecTransformer]
+        }
+
+        runQueryAndCompare("select from_json(txt, 'Nested STRUCT<Key: STRING>') from tbl") {
+          checkGlutenPlan[ProjectExecTransformer]
+        }
+
+        runQueryAndCompare("select from_json(txt, 'nested STRUCT<KEY: STRING>') from tbl") {
+          checkGlutenPlan[ProjectExecTransformer]
+        }
+    }
+  }
+
   test("from_json function CORRUPT_RECORD") {
     withTempPath {
       path =>
