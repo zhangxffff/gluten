@@ -223,12 +223,13 @@ object ConverterUtils extends Logging {
   /**
    * Same as [[getTypeNode(DataType, Boolean)]], but lets the caller decide whether struct field
    * names are normalized by [[normalizeColName]]. Pass `false` when the native function needs the
-   * original field names, e.g. from_json matches JSON keys against them case-sensitively.
+   * original field names, e.g. from_json matches JSON keys against them case-sensitively. The flag
+   * is by-name so the backend setting is only read when a struct type is converted.
    */
   def getTypeNode(
       datatype: DataType,
       nullable: Boolean,
-      lowerCaseStructFieldNames: Boolean): TypeNode = {
+      lowerCaseStructFieldNames: => Boolean): TypeNode = {
     datatype match {
       case BooleanType =>
         TypeBuilder.makeBoolean(nullable)
